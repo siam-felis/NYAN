@@ -23,7 +23,6 @@ def main():
 
     try:
         repo = github_instance.get_repo(repo_name)
-        issue.create_comment("Automated Comment")
         issues = repo.get_issues(state='open')
         for issue in issues:
             if issue.pull_request is not None:
@@ -42,10 +41,10 @@ def main():
     
                 repo.update_file("nyan.rpz", f"Add {domain} from issue #{issue.number}", content, repo.get_contents("nyan.rpz").sha)
     
-                issue.create_comment(f"? Domain `{domain}` added to `nyan.rpz`.")
+                issue.create_comment(f"✅ Domain `{domain}` added to `nany.rpz`.")
                 issue.edit(state="closed")
             else:
-                issue.create_comment(f"? Issue format invalid: {message}")
+                issue.create_comment(f"❌ Issue format invalid: {message}")
                 issue.edit(state="closed")
     except github.GithubException as e:
         print(f"Failed to create issue comment: {e}")
