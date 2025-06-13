@@ -1,9 +1,9 @@
-from github import Github, GithubException
+from github import Github
 import os
 import re
 from typing import Tuple, List
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # TBD read from file
 RECOVERY_USERS_SET = {"siam-felis", }
@@ -45,66 +45,59 @@ def validate_issue(title: str, body: str, user_login: str) -> Tuple[bool, str, s
     return True, f"{len(domains)} 件のドメインが検出されました。", action_type, domains
 
 
-def add_domains_with_date_block(existing_lines: List[str], new_domains: List[str], is_rpz: bool) -> List[str]:
+def extract_existing_domains(lines: List[str]) -> set:
+    domain_pattern = re.compile(r"^(?!#)(\*\.)?[a-zA-Z0-9.-]+")
+    return {line.strip().split()[0] for line in lines if domain_pattern.match(line.strip())}
+
+
+def add_domains_with_result(existing_lines: List[str], new_domains: List[str], is_rpz: bool, is_privileged: bool) -> Tuple[List[str], List[str]]:
     today_str = datetime.utcnow().date().strftime("%Y-%m-%d")
     date_header = f"# added: {today_str}"
-    new_lines = [f"{d} CNAME ." if is_rpz else d for d in new_domains]
+    updated_lines = existing_lines[:]
+    result_messages = []
+    existing_domains = extract_existing_domains(existing_lines)
 
-    # すでに今日のブロックが存在する場合はヘッダーを追加しない
-    if date_header in existing_lines:
-        return existing_lines + new_lines
-    else:
-        return existing_lines + [date_header] + new_lines
+    if date_header not in updated_lines:
+        updated_lines.append(date_header)
+
+    for domain in new_domains:
+        if is_wildcard(domain) and not is_privileged:
+            result_messages.append(f"\u274c `{domain}`: 権限が無いため SKIP")
+            continue
+        if domain in existing_domains:
+            result_messages.append(f"\u26a0\ufe0f `{domain}`: 重複のため SKIP")
+            continue
+        line = f"{domain} CNAME ." if is_rpz else domain
+        updated_lines.append(line)
+        result_messages.append(f"\u2705 `{domain}`: 更新成功")
+
+    return updated_lines, result_messages
 
 
-def clean_expired_blocks(lines: List[str], max_age_days=30) -> List[str]:
+def remove_old_entries(lines: List[str], max_age_days: int = 30) -> List[str]:
     result = []
-    block_date = None
+    current_block_date = None
+    cutoff_date = datetime.utcnow().date() - timedelta(days=max_age_days)
     buffer = []
 
     for line in lines:
-        match = re.match(r"# added: (\d{4}-\d{2}-\d{2})", line)
-        if match:
-            if block_date:
-                if (datetime.utcnow().date() - block_date).days <= max_age_days:
-                    result.extend(buffer)
-            block_date = datetime.strptime(match.group(1), "%Y-%m-%d").date()
-            buffer = [line]
+        line = line.strip()
+        if line.startswith("# added: "):
+            if buffer and current_block_date and current_block_date >= cutoff_date:
+                result.extend([f"# added: {current_block_date.strftime('%Y-%m-%d')}"] + buffer)
+            buffer = []
+            date_str = line.replace("# added: ", "").strip()
+            try:
+                current_block_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                current_block_date = None
         else:
             buffer.append(line)
 
-    if block_date and (datetime.utcnow().date() - block_date).days <= max_age_days:
-        result.extend(buffer)
+    if buffer and current_block_date and current_block_date >= cutoff_date:
+        result.extend([f"# added: {current_block_date.strftime('%Y-%m-%d')}"] + buffer)
 
     return result
-
-
-def remove_domains_from_lines(lines: List[str], domains_to_remove: List[str]) -> List[str]:
-    normalized = set(d.lower() for d in domains_to_remove)
-    return [line for line in lines if not any(d in line.lower() for d in normalized if d)]
-
-
-def update_file_in_repo(repo, file_path: str, new_domains: List[str], is_rpz: bool, remove_domains: List[str], issue_number: int):
-    contents = repo.get_contents(file_path)
-    existing_text = base64.b64decode(contents.content).decode("utf-8")
-    lines = existing_text.strip().split("\n")
-
-    # クリーンアップと削除
-    lines = clean_expired_blocks(lines)
-    if remove_domains:
-        lines = remove_domains_from_lines(lines, remove_domains)
-
-    # 新規ドメイン追加
-    lines = add_domains_with_date_block(lines, new_domains, is_rpz)
-
-    # コミット実行
-    updated_text = "\n".join(lines) + "\n"
-    repo.update_file(
-        path=file_path,
-        message=f"Update {file_path} from Issue #{issue_number}",
-        content=updated_text,
-        sha=contents.sha
-    )
 
 
 def main():
@@ -114,47 +107,67 @@ def main():
     repo_name = os.getenv("REPO_NAME")
     if not repo_name:
         raise EnvironmentError("REPO_NAME not found in environment variables")
-    github_instance = Github(token)
 
+    github_instance = Github(token)
     repo = github_instance.get_repo(repo_name)
     issues = repo.get_issues(state='open')
+
     for issue in issues:
         print(f"Processing issue #{issue.number} by {issue.user.login}")
         if issue.pull_request is not None:
             continue
 
-        valid, message, action_type, domains = validate_issue(
-            issue.title,
-            issue.body,
-            issue.user.login
-        )
-
-        if valid:
-            try:
-                if action_type == "white":
-                    # まず nyan.white を更新
-                    update_file_in_repo(
-                        repo, "nyan.white", domains, is_rpz=False,
-                        remove_domains=[], issue_number=issue.number
-                    )
-                    # 次に nyan.rpz から該当ドメインを除外
-                    update_file_in_repo(
-                        repo, "nyan.rpz", [], is_rpz=True,
-                        remove_domains=domains, issue_number=issue.number
-                    )
-                else:
-                    # nyan.rpz に追加（nyan.white の除去対象として使う）
-                    update_file_in_repo(
-                        repo, "nyan.rpz", domains, is_rpz=True,
-                        remove_domains=[], issue_number=issue.number
-                    )
-                issue.create_comment(f"✅ {len(domains)} 件のドメインを `{action_type}` に反映しました。")
-                issue.edit(state="closed")
-            except Exception as e:
-                issue.create_comment(f"❌ ファイル更新エラー: {e}")
-        else:
-            issue.create_comment(f"❌ バリデーションエラー: {message}")
+        valid, message, action_type, domains = validate_issue(issue.title, issue.body, issue.user.login)
+        if not valid:
+            issue.create_comment(f"\u2753 バリデーションエラー: {message}")
             issue.edit(state="closed")
+            continue
+
+        try:
+            is_rpz = (action_type == "rpz")
+            rpz_path = "nany.rpz"
+            white_path = "nyan.white"
+            target_path = rpz_path if is_rpz else white_path
+
+            contents = repo.get_contents(target_path)
+            existing_lines = base64.b64decode(contents.content).decode("utf-8").splitlines()
+            updated_lines, result_messages = add_domains_with_result(
+                existing_lines,
+                domains,
+                is_rpz=is_rpz,
+                is_privileged=(issue.user.login in WILDCARD_USERS_SET)
+            )
+            cleaned_lines = remove_old_entries(updated_lines)
+
+            if cleaned_lines != existing_lines:
+                repo.update_file(
+                    path=target_path,
+                    message=f"Update {target_path} from Issue #{issue.number}",
+                    content="\n".join(cleaned_lines) + "\n",
+                    sha=contents.sha
+                )
+
+            # recovery の場合は rpz も更新する
+            if not is_rpz:
+                rpz_contents = repo.get_contents(rpz_path)
+                rpz_lines = base64.b64decode(rpz_contents.content).decode("utf-8").splitlines()
+                white_domains = extract_existing_domains(cleaned_lines)
+                rpz_filtered = [line for line in rpz_lines if line.strip().split()[0] not in white_domains and not line.startswith("# added:") or re.match("# added: \\d{4}-\\d{2}-\\d{2}", line)]
+                rpz_cleaned = remove_old_entries(rpz_filtered)
+                repo.update_file(
+                    path=rpz_path,
+                    message=f"Auto sync {rpz_path} after white update from Issue #{issue.number}",
+                    content="\n".join(rpz_cleaned) + "\n",
+                    sha=rpz_contents.sha
+                )
+
+            issue.create_comment("\n".join(result_messages))
+            issue.edit(state="closed")
+
+        except Exception as e:
+            issue.create_comment(f"\u274c ファイル更新中にエラー: {e}")
+            issue.edit(state="closed")
+
 
 if __name__ == "__main__":
     main()
