@@ -125,7 +125,7 @@ def main():
 
         try:
             is_rpz = (action_type == "rpz")
-            rpz_path = "nany.rpz"
+            rpz_path = "nyan.rpz"
             white_path = "nyan.white"
             target_path = rpz_path if is_rpz else white_path
 
