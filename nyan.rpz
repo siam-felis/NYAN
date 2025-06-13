@@ -1,3 +1,10 @@
 # added: 2025-06-13
 hogehoge.com CNAME .
 hogehoge.com CNAME .
+hoge1hoge.com CNAME .
+hoge2hoge.com CNAME .
+hoge3hoge.com CNAME .
+hoge4hoge.com CNAME .
+hoge4hoge.com CNAME .
+hoge4hoge.com CNAME .
+*.hoge4hoge.com CNAME .
