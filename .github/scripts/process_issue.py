@@ -139,13 +139,13 @@ def main():
                     )
                     # 次に nyan.rpz から該当ドメインを除外
                     update_file_in_repo(
-                        repo, "nany.rpz", [], is_rpz=True,
+                        repo, "nyan.rpz", [], is_rpz=True,
                         remove_domains=domains, issue_number=issue.number
                     )
                 else:
-                    # nany.rpz に追加（nyan.white の除去対象として使う）
+                    # nyan.rpz に追加（nyan.white の除去対象として使う）
                     update_file_in_repo(
-                        repo, "nany.rpz", domains, is_rpz=True,
+                        repo, "nyan.rpz", domains, is_rpz=True,
                         remove_domains=[], issue_number=issue.number
                     )
                 issue.create_comment(f"✅ {len(domains)} 件のドメインを `{action_type}` に反映しました。")
