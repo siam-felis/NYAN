@@ -1,0 +1,11 @@
+$TTL 2h
+@   IN  SOA localhost. root.localhost. (
+        2024061301 ; serial
+        1h         ; refresh
+        15m        ; retry
+        30d        ; expire
+        2h )       ; minimum
+
+    IN  NS  localhost.
+
+; Blocked domains below
