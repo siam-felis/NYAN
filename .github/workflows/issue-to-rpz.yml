@@ -4,6 +4,10 @@ on:
   issues:
     types: [opened]
 
+concurrency:
+  group: process-issue-rpz
+  cancel-in-progress: false
+
 jobs:
   handle-issue:
     runs-on: ubuntu-latest
