@@ -7,8 +7,8 @@ from datetime import datetime
 
 # TBD read from file
 RECOVERY_USERS_SET = {"siam-felis", }
-WILDCARD_USERS_SET = RECOVERY_USERS_SET | {}
-COMMIT_USERS_SET = WILDCARD_USERS_SET | {}
+WILDCARD_USERS_SET = RECOVERY_USERS_SET | {"siam-felis", }
+COMMIT_USERS_SET = WILDCARD_USERS_SET | {"siam-felis", }
 BAN_USERS_SET = {}
 
 STRICT_DOMAIN_PATTERN = re.compile(
