@@ -9,3 +9,4 @@ $TTL 2h
     IN  NS  localhost.
 
 ; Blocked domains below
+hoge.com. IN CNAME .
