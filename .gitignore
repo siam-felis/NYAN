@@ -194,4 +194,4 @@ cython_debug/
 .cursorindexingignore
 
 #
-desktop.ini
+/desktop.ini
